@@ -31,6 +31,8 @@ impl InferenceService {
         &self,
         cmd: LlmInferenceCommand,
     ) -> Result<Vec<InferenceEvent>, String> {
+        // One request_id links all produced events across the whole chat chain.
+        // Один request_id связывает все события, созданные в рамках одного запроса цепочки.
         let start = Instant::now();
         let mut full_response = String::new();
         let mut tokens = 0_u64;
@@ -41,6 +43,8 @@ impl InferenceService {
             tokens += chunk.split_whitespace().count() as u64;
             full_response.push_str(&chunk);
 
+            // Streaming phase: publish partial response chunks for downstream live delivery.
+            // Фаза стриминга: публикуем частичные чанки ответа для downstream-сервисов и live-выдачи.
             let chunk_event = InferenceEvent::LlmResponseChunkGenerated(LlmResponseChunkGeneratedEvent {
                 request_id: cmd.request_id.clone(),
                 chunk,
@@ -51,6 +55,8 @@ impl InferenceService {
             events.push(chunk_event);
         }
 
+        // Final phase: emit one terminal event that response-processor can persist as complete.
+        // Финальная фаза: отправляем одно завершающее событие, по которому response-processor фиксирует полный ответ.
         let final_event = InferenceEvent::LlmResponseGenerated(LlmResponseGeneratedEvent {
             request_id: cmd.request_id.clone(),
             response: full_response,

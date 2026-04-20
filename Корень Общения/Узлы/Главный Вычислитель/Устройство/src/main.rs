@@ -32,6 +32,8 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or(true);
 
     let (tx, mut rx) = mpsc::channel::<LlmInferenceCommand>(16);
+    // In local/mock mode we bootstrap one synthetic command to test full internal flow quickly.
+    // В локальном/mock-режиме подаем синтетическую команду, чтобы быстро проверить полный внутренний поток.
     if bootstrap_mock_mode {
         KafkaConsumerMock::spawn_mock(tx);
     }
@@ -44,6 +46,8 @@ async fn main() -> std::io::Result<()> {
 
     let background_service = Arc::clone(&service);
     tokio::spawn(async move {
+        // Represents Kafka consumer loop: each LLMInferenceRequested is handled independently.
+        // Это имитация Kafka consumer loop: каждая команда LLMInferenceRequested обрабатывается независимо.
         while let Some(command) = rx.recv().await {
             let _ = handle_llm_inference_requested(&background_service, command).await;
         }
@@ -70,6 +74,8 @@ async fn infer(
     service: web::Data<Arc<InferenceService>>,
     model_name: web::Data<String>,
 ) -> impl Responder {
+    // HTTP endpoint mirrors incoming Kafka command shape for isolated/manual testing.
+    // HTTP endpoint повторяет форму Kafka-команды для изолированного и ручного тестирования.
     let command = LlmInferenceCommand {
         request_id: Uuid::new_v4().to_string(),
         conversation_id: "http-debug".to_string(),

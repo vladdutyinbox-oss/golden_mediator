@@ -15,7 +15,11 @@ pub struct LlmResponseGeneratedEvent {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum InferenceEvent {
+    // Published multiple times per request to support downstream streaming transport.
+    // Публикуется многократно в рамках запроса для потоковой доставки в downstream.
     LlmResponseChunkGenerated(LlmResponseChunkGeneratedEvent),
+    // Published exactly once per request as terminal "response is complete" signal.
+    // Публикуется ровно один раз на запрос как финальный сигнал "ответ завершен".
     LlmResponseGenerated(LlmResponseGeneratedEvent),
 }
 
