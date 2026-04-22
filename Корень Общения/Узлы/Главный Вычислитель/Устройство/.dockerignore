@@ -1,0 +1,6 @@
+target
+.git
+.gitignore
+Dockerfile
+k8s
+tests
