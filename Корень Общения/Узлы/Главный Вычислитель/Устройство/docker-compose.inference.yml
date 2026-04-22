@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  rust-inference:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rust-inference
+    ports:
+      - "8081:8081"
+    environment:
+      RUST_LOG: info
+      PORT: 8081
+      MODEL_NAME: phi3:mini
+      BOOTSTRAP_MOCK_MODE: "true"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:8081/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
