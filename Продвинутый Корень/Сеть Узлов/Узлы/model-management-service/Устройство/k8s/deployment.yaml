@@ -1,0 +1,128 @@
+# k8s/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-management-service
+  namespace: ai-platform
+  labels:
+    app: model-management-service
+    tier: backend
+    component: model-management
+  annotations:
+    description: "Model Management Service - orchestrates model versions and propagates config to rust-inference-service"
+spec:
+  replicas: 2                          # Начальное количество реплик
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: model-management-service
+
+  template:
+    metadata:
+      labels:
+        app: model-management-service
+        tier: backend
+      annotations:
+        # Для автоматического перезапуска при изменении конфига
+        checksum/config: "v1"
+    spec:
+      containers:
+      - name: model-management-service
+        image: your-registry/model-management-service:v1.0.0   # Замените на ваш образ
+        imagePullPolicy: IfNotPresent
+
+        ports:
+        - containerPort: 8002
+          name: http
+          protocol: TCP
+
+        # Окружение
+        env:
+        - name: ENV
+          value: "production"
+
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "redpanda-headless.ai-platform.svc.cluster.local:9092"
+
+        - name: MODEL_REGISTRY_URL
+          value: "http://model-registry-service.ai-platform.svc.cluster.local:8003"
+
+        - name: OTEL_ENDPOINT
+          value: "http://otel-collector.ai-platform.svc.cluster.local:4317"
+
+        - name: OTEL_SERVICE_NAME
+          value: "model-management-service"
+
+        resources:
+          requests:
+            cpu: "300m"
+            memory: "768Mi"
+          limits:
+            cpu: "800m"
+            memory: "1.5Gi"
+
+        # Health и Readiness проверки
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+          initialDelaySeconds: 20
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8002
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+
+        # Запуск приложения
+        command: ["uvicorn"]
+        args:
+          - "src.main:app"
+          - "--host"
+          - "0.0.0.0"
+          - "--port"
+          - "8002"
+          - "--no-access-log"
+
+        # Security
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+
+      # Node selector и tolerations (при необходимости)
+      # nodeSelector:
+      #   node-type: backend
+
+      # tolerations:
+      # - key: "dedicated"
+      #   operator: "Equal"
+      #   value: "ai-workload"
+      #   effect: "NoSchedule"
+
+---
+
+# Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-management-service
+  namespace: ai-platform
+  labels:
+    app: model-management-service
+spec:
+  selector:
+    app: model-management-service
+  ports:
+  - port: 8002
+    targetPort: 8002
+    name: http
+  type: ClusterIP

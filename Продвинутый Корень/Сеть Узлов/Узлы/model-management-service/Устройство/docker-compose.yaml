@@ -1,0 +1,123 @@
+# docker-compose.yml
+version: '3.9'
+
+networks:
+  ai-network:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: ai-network
+
+services:
+
+  # ===================================================================
+  # Model Management Service (главный сервис)
+  # ===================================================================
+  model-management-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: model-management-service
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env
+    environment:
+      - ENV=development
+      - KAFKA_BOOTSTRAP_SERVERS=redpanda:9092
+      - MODEL_REGISTRY_URL=http://model-registry-service:8003
+      - OTEL_ENDPOINT=http://otel-collector:4317
+    networks:
+      - ai-network
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      # model-registry-service:
+      #   condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ===================================================================
+  # Redpanda (Kafka-совместимый event-bus) — критично для ключевого взаимодействия
+  # ===================================================================
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.1
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:29092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092,OUTSIDE://localhost:29092
+    ports:
+      - "9092:9092"      # Kafka API
+      - "29092:29092"    # External access
+      - "9644:9644"      # Admin API / metrics
+    networks:
+      - ai-network
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy.*true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+
+  # ===================================================================
+  # Schema Registry (для Protobuf / Avro схем событий)
+  # ===================================================================
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.6.0
+    container_name: schema-registry
+    environment:
+      - SCHEMA_REGISTRY_HOST_NAME=schema-registry
+      - SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS=redpanda:9092
+      - SCHEMA_REGISTRY_LISTENERS=http://0.0.0.0:8081
+      - SCHEMA_REGISTRY_KAFKASTORE_TOPIC=_schemas
+    ports:
+      - "8081:8081"
+    networks:
+      - ai-network
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/subjects"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===================================================================
+  # OpenTelemetry Collector (для сбора метрик и трассировок)
+  # ===================================================================
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.104.0
+    container_name: otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"   # gRPC OTLP
+      - "4318:4318"   # HTTP OTLP
+    networks:
+      - ai-network
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+volumes:
+  redpanda-data:
+    driver: local

@@ -1,0 +1,140 @@
+# =============================================================================
+# justfile для model-management-service
+# =============================================================================
+# Этот justfile содержит все необходимые команды для:
+# - локальной разработки
+# - запуска в Docker
+# - тестирования ключевого взаимодействия
+# - измерения SOTA метрик (propagation latency и т.д.)
+# - работы с Kubernetes
+
+set dotenv-load := true
+
+# ====================== ОСНОВНЫЕ КОМАНДЫ ======================
+
+default:
+    just --list
+
+# ------------------------------------------------------------------
+# Запуск и разработка
+# ------------------------------------------------------------------
+
+# Запустить сервис локально с hot-reload (для разработки)
+dev:
+    uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload --log-level info
+
+# Запустить сервис в production-режиме
+run:
+    uvicorn src.main:app --host 0.0.0.0 --port 8002 --log-level warning
+
+# ------------------------------------------------------------------
+# Docker
+# ------------------------------------------------------------------
+
+# Собрать Docker образ
+build:
+    docker build -t model-management-service:latest .
+
+# Запустить через docker-compose
+up:
+    docker compose up -d --build
+
+# Остановить сервисы
+down:
+    docker compose down
+
+# Посмотреть логи сервиса
+logs:
+    docker compose logs -f model-management-service
+
+# Перезапустить только этот сервис
+restart:
+    docker compose restart model-management-service
+
+# ------------------------------------------------------------------
+# Тестирование
+# ------------------------------------------------------------------
+
+# Запустить все тесты
+test:
+    pytest src/tests/ -v --tb=short
+
+# Запустить только unit-тесты
+test-unit:
+    pytest src/tests/unit/ -v --tb=short
+
+# Запустить интеграционные тесты (ключевые для нашего взаимодействия)
+test-integration:
+    pytest src/tests/integration/ -v --tb=short -m integration
+
+# Запустить только тест ключевого взаимодействия (propagation)
+test-propagation:
+    pytest src/tests/integration/test_model_propagation.py -v --tb=short --log-cli-level=INFO
+
+# Запустить тест с подробным выводом времени выполнения
+test-propagation-verbose:
+    pytest src/tests/integration/test_model_propagation.py -v --tb=short --log-cli-level=DEBUG
+
+# ------------------------------------------------------------------
+# Ручные проверки ключевого взаимодействия
+# ------------------------------------------------------------------
+
+# Проверить здоровье сервиса
+health:
+    curl -s http://localhost:8002/health | jq
+
+# Проверить readiness
+ready:
+    curl -s http://localhost:8002/ready | jq
+
+# Опубликовать тестовую версию модели (ручная проверка ключевого пути)
+publish-test-model:
+    curl -X POST http://localhost:8002/api/v1/models/publish \
+      -H "Content-Type: application/json" \
+      -d @test-payload.json \
+      | jq
+
+# ------------------------------------------------------------------
+# Kubernetes
+# ------------------------------------------------------------------
+
+# Применить deployment в Kubernetes
+k8s-apply:
+    kubectl apply -f k8s/deployment.yaml
+
+# Удалить deployment
+k8s-delete:
+    kubectl delete -f k8s/deployment.yaml
+
+# Посмотреть логи пода
+k8s-logs:
+    kubectl logs -l app=model-management-service -f
+
+# ------------------------------------------------------------------
+# Полезные утилиты
+# ------------------------------------------------------------------
+
+# Очистка кэша и временных файлов
+clean:
+    find . -type d -name "__pycache__" -exec rm -rf {} +
+    find . -type d -name "*.pytest_cache" -exec rm -rf {} +
+    docker compose down -v
+
+# Показать статус всех контейнеров
+status:
+    docker compose ps
+
+# Открыть документацию Swagger
+docs:
+    echo "Swagger UI: http://localhost:8002/docs"
+    echo "ReDoc:      http://localhost:8002/redoc"
+
+# ====================== ALIASES ======================
+
+# Короткие алиасы для удобства
+alias t := test
+alias ti := test-integration
+alias tp := test-propagation
+alias u := up
+alias d := down
+alias h := health

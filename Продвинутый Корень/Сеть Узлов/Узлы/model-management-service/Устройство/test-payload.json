@@ -1,0 +1,13 @@
+{
+    "id": "manual-test-v1",
+    "name": "Manual Test Model v1.0",
+    "storage_path": "s3://models/manual/test-v1",
+    "inference_params": {
+      "temperature": 0.75,
+      "top_p": 0.92,
+      "max_tokens": 4096,
+      "context_length": 32768
+    },
+    "persona_bindings": ["persona:default", "persona:creative"],
+    "published_by": "developer"
+  }
